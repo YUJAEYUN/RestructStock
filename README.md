@@ -28,11 +28,31 @@
 ## 현재 상태 (2026-07-06)
 
 - 3-1(뉴스 데이터 정리) 1차 완료: 31,667건 기사 → 993개 회사 후보, 2,023개 이벤트로 정리.
-- **미해결 블로커**: 현재 실행 환경은 아웃바운드 네트워크가 정책상 차단되어 있어
-  네이버 금융/KRX/DART/토스증권 API에 접근할 수 없다. 따라서 종목코드 매칭,
-  주가·지수 데이터 수집(3-2), 회복률 계산(3-3), 상장폐지 여부 확인, DART 교차검증(3-5)은
-  아직 진행하지 못했다. 네트워크 접근이 가능한 환경에서 이어서 진행하거나, 사용자가
-  KRX 상장기업 목록 및 주가 데이터를 파일로 제공하면 다음 단계로 진행 가능.
+- 3-2 일부 진행:
+  - `FinanceDataReader`로 KRX 현재 상장사/상장폐지 마스터를 수집.
+    → `data/reference/listed_companies.csv`, `data/reference/delisted_companies.csv`
+  - 뉴스 회사명과 상장/상장폐지 마스터를 보수적으로 정확매칭.
+    → `data/processed/company_listing_matches.csv`, `data/processed/events_with_listings.csv`
+  - 현재상장 정확매칭 종목 194개와 KOSPI/KOSDAQ 지수 가격을 수집.
+    → `data/prices/stocks/`, `data/prices/indices/`
+- **남은 제약**:
+  - `FinanceDataReader`/`pykrx` 종목 가격 API는 현재 약 3,000거래일만 반환해서,
+    수집된 현재상장 종목 가격은 대체로 2014-04-11 이후부터만 존재한다.
+    2010~2014년 초 이벤트까지 분석하려면 네이버 차트 XML 기반 장기 가격 보강이 필요하다.
+    보강 스크립트 초안은 `scripts/07_fetch_prices_naver_chart.py`에 두었고, 실행은 TODO로 남김.
+  - 상장폐지 종목 가격은 별도 provider 검증이 필요하다. 현재는 상장폐지 마스터와 이벤트 매칭만 완료.
+  - 회복률 계산(3-3), 사유분류/업종별 집계, DART 교차검증(3-5)은 아직 진행하지 않았다.
 - 회사명 후보 추출은 규칙 기반 블록리스트 방식이라 완벽하지 않다. `company_candidates.csv`와
   `events.csv`를 사람이 한 번 훑어보고 제외할 항목을 표시하는 검수 과정이 필요하다
   (PRD 3-1-5 참고).
+
+## TODO
+
+- `company_listing_matches.csv`에서 `unmatched`/`ambiguous` 항목 수동 검수:
+  모회사 매핑, 비상장/해외기업 제외, 자회사/브랜드명 정리.
+- 2010~2014년 가격 보강:
+  `scripts/07_fetch_prices_naver_chart.py` 실행 또는 별도 데이터 파일 확보.
+- 상장폐지 종목 가격 수집 provider 확정:
+  관찰 기간 내 상장폐지 이벤트를 회복률 0% 처리할 수 있도록 delisting date와 가격 종단일 검증.
+- 회복률 계산 스크립트 작성:
+  발표 전 60일 평균 대비, 이벤트 후 저점 대비, 시장 초과수익률 기준을 모두 산출.
