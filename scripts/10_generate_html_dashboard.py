@@ -1,5 +1,6 @@
 """
 구조조정 보도 기업 주가 회복률 분석 결과를 시각화하는 인터랙티브 HTML 대시보드를 생성한다.
+용어를 쉽게 풀어쓰고, 각 데이터 포인트의 수학적 계산 근거를 추적할 수 있는 펼치기(Detail) 기능을 제공한다.
 
 입력:
   data/analysis/by_keyword.csv
@@ -32,13 +33,17 @@ def main():
     year_json = by_year.to_dict(orient="records")
     industry_json = by_industry.to_dict(orient="records")
     
-    # Take a summary subset of the events table to keep HTML file size reasonable
-    # Sort by event date descending
+    # Selected columns for interactive table and detailed evidence popup
+    table_cols = [
+        "회사명", "종목코드", "이벤트시작일", "시장", "기사수", "키워드종류", "대표제목",
+        "baseline_stock", "baseline_index", 
+        "price_30d", "return_30d", "idx_price_30d", "idx_return_30d", "excess_30d",
+        "price_90d", "return_90d", "idx_price_90d", "idx_return_90d", "excess_90d",
+        "price_180d", "return_180d", "idx_price_180d", "idx_return_180d", "excess_180d",
+        "price_365d", "return_365d", "idx_price_365d", "idx_return_365d", "excess_365d",
+        "상장폐지일", "상장폐지사유", "is_bankrupt_delist"
+    ]
     df_sorted = df.sort_values("이벤트시작일", ascending=False)
-    # Selected columns for interactive table
-    table_cols = ["회사명", "종목코드", "이벤트시작일", "시장", "기사수", "키워드종류", "대표제목",
-                  "return_30d", "excess_30d", "return_90d", "excess_90d", 
-                  "return_180d", "excess_180d", "return_365d", "excess_365d"]
     df_table = df_sorted[table_cols].copy()
     # Fill NaNs with None for JSON compatibility
     df_table = df_table.replace({float("nan"): None})
@@ -120,7 +125,7 @@ def main():
         }}
 
         h1::before {{
-            content: '📉';
+            content: '📊';
             font-size: 2.2rem;
         }}
 
@@ -134,6 +139,46 @@ def main():
             max-width: 1400px;
             margin: 0 auto;
             padding: 2rem;
+        }}
+
+        /* Glossary section styling */
+        .glossary-card {{
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px dashed rgba(99, 102, 241, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2.5rem;
+            backdrop-filter: blur(8px);
+        }}
+
+        .glossary-title {{
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #a5b4fc;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }}
+
+        .glossary-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.25rem;
+        }}
+
+        .glossary-item h5 {{
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 0.25rem;
+        }}
+
+        .glossary-item p {{
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
         }}
 
         /* Metrics grid */
@@ -285,7 +330,7 @@ def main():
             overflow-x: auto;
             border-radius: 12px;
             border: 1px solid var(--border-color);
-            max-height: 500px;
+            max-height: 600px;
             overflow-y: auto;
         }}
 
@@ -316,16 +361,108 @@ def main():
             color: var(--text-main);
         }}
 
-        tr:last-child td {{
-            border-bottom: none;
+        .clickable-row {{
+            cursor: pointer;
         }}
 
-        tr {{
-            transition: background-color 0.2s ease;
+        .clickable-row:hover {{
+            background-color: rgba(255, 255, 255, 0.04);
         }}
 
-        tr:hover {{
-            background-color: rgba(255, 255, 255, 0.02);
+        /* Expanded Details styling */
+        .details-row td {{
+            background-color: rgba(15, 23, 42, 0.4);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0;
+        }}
+
+        .evidence-box {{
+            padding: 1.5rem;
+            border-left: 4px solid var(--accent-indigo);
+            margin: 0.75rem 1rem;
+            background: rgba(30, 41, 59, 0.4);
+            border-radius: 8px;
+        }}
+
+        .evidence-box h4 {{
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            color: #fff;
+            margin-bottom: 1rem;
+        }}
+
+        .evidence-grid {{
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 1.5rem;
+        }}
+
+        @media (max-width: 768px) {{
+            .evidence-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+
+        .evidence-step {{
+            background: rgba(15, 23, 42, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+        }}
+
+        .evidence-step strong {{
+            display: block;
+            font-size: 0.85rem;
+            color: var(--accent-blue);
+            margin-bottom: 0.5rem;
+        }}
+
+        .evidence-step ul {{
+            list-style: none;
+            font-size: 0.8rem;
+        }}
+
+        .evidence-step li {{
+            margin-bottom: 0.5rem;
+            color: var(--text-muted);
+        }}
+
+        .evidence-step li strong {{
+            display: inline;
+            color: #fff;
+        }}
+
+        .evidence-table {{
+            width: 100%;
+            font-size: 0.8rem;
+        }}
+
+        .evidence-table th {{
+            position: relative;
+            background-color: rgba(15, 23, 42, 0.6);
+            padding: 0.5rem 0.75rem;
+        }}
+
+        .evidence-table td {{
+            padding: 0.5rem 0.75rem;
+            background: transparent;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }}
+
+        .delist-alert {{
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #fca5a5;
+        }}
+
+        .delist-alert.info {{
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            color: #bae6fd;
         }}
 
         .badge {{
@@ -391,7 +528,7 @@ def main():
     <header>
         <div>
             <h1>RestructStock</h1>
-            <div class="subtitle">구조조정 보도 기업 주가 회복률 & 시장 초과수익률 분석 대시보드</div>
+            <div class="subtitle">구조조정 보도 기업 주가 회복률 & 시장 성과 분석 대시보드</div>
         </div>
         <div style="text-align: right;">
             <div style="font-size: 0.8rem; color: var(--text-muted);">최종 업데이트</div>
@@ -401,32 +538,59 @@ def main():
 
     <div class="main-container">
 
+        <!-- Glossary Section -->
+        <div class="glossary-card">
+            <div class="glossary-title">💡 대시보드 쉽게 읽는 용어집</div>
+            <div class="glossary-grid">
+                <div class="glossary-item">
+                    <h5>구조조정 보도일</h5>
+                    <p>뉴스에 구조조정/희망퇴직/인력감축 보도가 처음으로 등장하여 기록된 날짜(시작일)입니다.</p>
+                </div>
+                <div class="glossary-item">
+                    <h5>보도 전 평균 주가 (기준 주가)</h5>
+                    <p>뉴스가 보도되기 전 60거래일 동안의 평균 주가입니다. 뉴스 발표 이후 주가가 얼마나 올랐는지 판단하는 기준점이 됩니다.</p>
+                </div>
+                <div class="glossary-item">
+                    <h5>실제 주가 변화율 (실제 수익률)</h5>
+                    <p>보도 전 평균 주가 대비, 보도 이후 특정 시점(30일/90일/180일/1년)의 주가가 얼마나 변했는지 나타내는 비율입니다.</p>
+                </div>
+                <div class="glossary-item">
+                    <h5>시장 대비 성과 (시장 초과수익률)</h5>
+                    <p>기업의 주가 변화율에서 주식시장 전체의 상승률(코스피/코스닥 지수 상승률)을 뺀 값입니다. 값이 마이너스(-)라면 주가가 올랐더라도 시장 평균보다는 덜 벌었다는 의미입니다.</p>
+                </div>
+                <div class="glossary-item">
+                    <h5>주식시장 퇴출(부도/상장폐지)</h5>
+                    <p>관찰 기간 중 자본잠식이나 부도 등으로 인해 상장폐지된 경우입니다. 투자 금액을 모두 잃은 상황이므로, 분석의 현실성을 위해 상장폐지 이후 시점의 실제 주가는 0원(-100% 손실)으로 계산했습니다.</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Metrics cards row -->
         <div class="metrics-grid">
             <div class="metric-card">
-                <div class="metric-label">총 분석 이벤트</div>
+                <div class="metric-label">구조조정 보도 건수</div>
                 <div class="metric-value">{total_events:,} 건</div>
                 <div class="metric-subtext">2010.01 ~ 2026.07 뉴스 통합</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">분석 대상 상장사</div>
+                <div class="metric-label">분석한 기업 수</div>
                 <div class="metric-value">{unique_companies:,} 개사</div>
-                <div class="metric-subtext">현재 상장 및 상장폐지사 통합</div>
+                <div class="metric-subtext">현재 상장사 및 상장폐지사 통합</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">부도/자본잠식 상장폐지</div>
+                <div class="metric-label">주식시장 퇴출(부도/상장폐지)</div>
                 <div class="metric-value danger">{bankruptcies} 개사</div>
-                <div class="metric-subtext">이벤트 발생 후 1년 내 청산/부도</div>
+                <div class="metric-subtext">보도 이후 1년 이내 부도로 청산된 기업</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">평균 1년 절대 회복률</div>
+                <div class="metric-label">보도 1년 뒤 실제 주가 변화율</div>
                 <div class="metric-value success">+{avg_365d_ret * 100:.2f}%</div>
-                <div class="metric-subtext">보도 전 60일 평균가 대비 절대 변동</div>
+                <div class="metric-subtext">보도 전 60일 평균 대비 평균 변동</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">평균 1년 지수 초과수익률</div>
+                <div class="metric-label">보도 1년 뒤 시장 대비 평균 성과</div>
                 <div class="metric-value danger">{avg_365d_exc * 100:.2f}%</div>
-                <div class="metric-subtext">개별수익률 - 지수(KOSPI/KOSDAQ)수익률</div>
+                <div class="metric-subtext">시장 지수 상승률을 뺀 초과 성과</div>
             </div>
         </div>
 
@@ -436,7 +600,7 @@ def main():
             <!-- Chart 1: Trajectory by Keyword -->
             <div class="chart-card">
                 <div class="chart-header">
-                    <div class="chart-title">구조조정 보도 유형별 주가 추이 (30d ~ 365d)</div>
+                    <div class="chart-title">구조조정 보도 유형별 실제 주가 추이 (30일 ~ 1년)</div>
                     <select id="keywordSelect" class="chart-select" onchange="updateKeywordChart()">
                         <option value="all">모든 유형 비교</option>
                         <option value="구조조정">구조조정 단독</option>
@@ -453,7 +617,7 @@ def main():
             <!-- Chart 2: Sector Comparison -->
             <div class="chart-card">
                 <div class="chart-header">
-                    <div class="chart-title">주요 업종별 1년 후 수익률 비교 (이벤트 상위 업종)</div>
+                    <div class="chart-title">주요 업종별 1년 후 주가 흐름 비교 (보도가 잦은 상위 업종)</div>
                 </div>
                 <div class="chart-container">
                     <canvas id="sectorChart"></canvas>
@@ -463,7 +627,7 @@ def main():
             <!-- Chart 3: Yearly Trends -->
             <div class="chart-card full-width">
                 <div class="chart-header">
-                    <div class="chart-title">연도별 구조조정 보도 건수 및 1년 평균 수익률 추이</div>
+                    <div class="chart-title">연도별 구조조정 보도 빈도 및 1년 평균 성과 추이</div>
                 </div>
                 <div class="chart-container">
                     <canvas id="yearlyChart"></canvas>
@@ -475,7 +639,7 @@ def main():
         <!-- Events Table card -->
         <div class="table-card">
             <div class="table-header-row">
-                <div class="chart-title" style="margin-bottom: 0;">구조조정 뉴스 이벤트 상세 데이터 내역</div>
+                <div class="chart-title" style="margin-bottom: 0;">구조조정 뉴스 이벤트 상세 데이터 내역 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(행을 클릭하면 상세 계산 근거를 볼 수 있습니다)</span></div>
                 <div class="search-container">
                     <input type="text" id="tableSearch" class="search-input" onkeyup="filterTable()" placeholder="회사명, 종목코드, 제목 검색...">
                 </div>
@@ -486,14 +650,14 @@ def main():
                         <tr>
                             <th style="min-width: 120px;">회사명</th>
                             <th>종목코드</th>
-                            <th>이벤트 날짜</th>
+                            <th>보도 날짜</th>
                             <th>시장</th>
-                            <th>키워드</th>
-                            <th>30일 회복률</th>
-                            <th>90일 회복률</th>
-                            <th>180일 회복률</th>
-                            <th>365일 회복률</th>
-                            <th>365일 초과수익률</th>
+                            <th>보도 키워드</th>
+                            <th>30일 변화율</th>
+                            <th>90일 변화율</th>
+                            <th>180일 변화율</th>
+                            <th>1년(365일) 변화율</th>
+                            <th>1년 시장 대비 성과</th>
                             <th style="min-width: 250px;">대표 기사 제목</th>
                         </tr>
                     </thead>
@@ -520,15 +684,10 @@ def main():
         let keywordChart;
         function initKeywordChart() {{
             const ctx = document.getElementById('keywordChart').getContext('2d');
-            
-            // Prepare default datasets (All comparison)
-            const periods = ['30d', '90d', '180d', '365d'];
             const selectValue = document.getElementById('keywordSelect').value;
-            
             let datasets = [];
             
             if (selectValue === 'all') {{
-                // Plot 3 major groups
                 const targets = ['구조조정', '희망퇴직', '구조조정,희망퇴직'];
                 const colors = [
                     {{ ret: '#38bdf8', exc: '#6366f1' }}, // 구조조정
@@ -540,7 +699,7 @@ def main():
                     const row = keywordData.find(r => r.키워드종류 === t);
                     if (row) {{
                         datasets.push({{
-                            label: `${{t}} 절대수익률`,
+                            label: `${{t}} 실제주가 변화율`,
                             data: [row.return_30d_avg * 100, row.return_90d_avg * 100, row.return_180d_avg * 100, row.return_365d_avg * 100],
                             borderColor: colors[i].ret,
                             backgroundColor: colors[i].ret + '10',
@@ -549,7 +708,7 @@ def main():
                             fill: false
                         }});
                         datasets.push({{
-                            label: `${{t}} 초과수익률`,
+                            label: `${{t}} 시장 대비 성과`,
                             data: [row.excess_30d_avg * 100, row.excess_90d_avg * 100, row.excess_180d_avg * 100, row.excess_365d_avg * 100],
                             borderColor: colors[i].exc,
                             backgroundColor: colors[i].exc + '10',
@@ -561,11 +720,10 @@ def main():
                     }}
                 }});
             }} else {{
-                // Plot single selected group showing Absolute vs Excess
                 const row = keywordData.find(r => r.키워드종류 === selectValue);
                 if (row) {{
                     datasets.push({{
-                        label: '절대 회복률',
+                        label: '실제 주가 변화율',
                         data: [row.return_30d_avg * 100, row.return_90d_avg * 100, row.return_180d_avg * 100, row.return_365d_avg * 100],
                         borderColor: '#10b981',
                         backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -574,7 +732,7 @@ def main():
                         fill: true
                     }});
                     datasets.push({{
-                        label: '시장 대비 초과수익률 (BM 대비)',
+                        label: '시장 대비 초과 성과',
                         data: [row.excess_30d_avg * 100, row.excess_90d_avg * 100, row.excess_180d_avg * 100, row.excess_365d_avg * 100],
                         borderColor: '#38bdf8',
                         backgroundColor: 'rgba(56, 189, 248, 0.1)',
@@ -591,7 +749,7 @@ def main():
             keywordChart = new Chart(ctx, {{
                 type: 'line',
                 data: {{
-                    labels: ['이벤트 후 30일', '이벤트 후 90일', '이벤트 후 180일', '이벤트 후 1년(365일)'],
+                    labels: ['보도 30일 뒤', '보도 90일 뒤', '보도 180일 뒤', '보도 1년 뒤(365일)'],
                     datasets: datasets
                 }},
                 options: {{
@@ -633,8 +791,6 @@ def main():
         // ----------------------------------------------------
         function initSectorChart() {{
             const ctx = document.getElementById('sectorChart').getContext('2d');
-            
-            // Take top 8 industries by event count
             const topSectors = industryData.slice(0, 8);
             const labels = topSectors.map(r => r.업종);
             const returnData = topSectors.map(r => r.return_365d_avg * 100);
@@ -646,7 +802,7 @@ def main():
                     labels: labels,
                     datasets: [
                         {{
-                            label: '1년 절대 회복률',
+                            label: '1년 실제 주가 변화율',
                             data: returnData,
                             backgroundColor: 'rgba(56, 189, 248, 0.7)',
                             borderColor: '#38bdf8',
@@ -654,7 +810,7 @@ def main():
                             borderRadius: 6
                         }},
                         {{
-                            label: '1년 초과수익률',
+                            label: '1년 시장 대비 성과',
                             data: excessData,
                             backgroundColor: 'rgba(99, 102, 241, 0.7)',
                             borderColor: '#6366f1',
@@ -691,8 +847,6 @@ def main():
         // ----------------------------------------------------
         function initYearlyChart() {{
             const ctx = document.getElementById('yearlyChart').getContext('2d');
-            
-            // Clean up years (remove any NaN year values if they exist)
             const cleanYearData = yearData.filter(r => !isNaN(r.이벤트연도));
             const labels = cleanYearData.map(r => r.이벤트연도);
             const eventCounts = cleanYearData.map(r => r.이벤트수);
@@ -706,7 +860,7 @@ def main():
                     datasets: [
                         {{
                             type: 'bar',
-                            label: '이벤트 건수',
+                            label: '보도 건수',
                             data: eventCounts,
                             backgroundColor: 'rgba(255, 255, 255, 0.1)',
                             borderColor: 'rgba(255, 255, 255, 0.2)',
@@ -716,7 +870,7 @@ def main():
                         }},
                         {{
                             type: 'line',
-                            label: '평균 1년 절대수익률',
+                            label: '평균 1년 실제주가 변화율',
                             data: returns,
                             borderColor: '#34d399',
                             borderWidth: 3,
@@ -726,7 +880,7 @@ def main():
                         }},
                         {{
                             type: 'line',
-                            label: '평균 1년 초과수익률',
+                            label: '평균 1년 시장 대비 성과',
                             data: excess,
                             borderColor: '#ef4444',
                             borderWidth: 2,
@@ -752,14 +906,14 @@ def main():
                             position: 'left',
                             ticks: {{ color: '#94a3b8', callback: val => val.toFixed(0) + '%' }},
                             grid: {{ color: 'rgba(255, 255, 255, 0.05)' }},
-                            title: {{ display: true, text: '수익률', color: '#94a3b8' }}
+                            title: {{ display: true, text: '주가 변화율', color: '#94a3b8' }}
                         }},
                         yEvent: {{
                             type: 'linear',
                             position: 'right',
                             ticks: {{ color: '#94a3b8' }},
                             grid: {{ display: false }},
-                            title: {{ display: true, text: '이벤트 건수', color: '#94a3b8' }}
+                            title: {{ display: true, text: '보도 건수', color: '#94a3b8' }}
                         }},
                         x: {{
                             ticks: {{ color: '#94a3b8' }},
@@ -771,16 +925,17 @@ def main():
         }}
 
         // ----------------------------------------------------
-        // Interactive Data Table
+        // Interactive Data Table with Collapsible Evidence Panel
         // ----------------------------------------------------
         function renderTable(data) {{
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
             
-            data.forEach(row => {{
+            data.forEach((row, index) => {{
                 const tr = document.createElement('tr');
+                tr.className = 'clickable-row';
+                tr.onclick = () => toggleDetails(index);
                 
-                // Helper to format values
                 const fmtPct = val => {{
                     if (val === null || val === undefined) return '<span class="ret-value neutral">N/A</span>';
                     const num = val * 100;
@@ -803,7 +958,117 @@ def main():
                     <td style="color: var(--text-muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{row.대표제목}}">${{row.대표제목}}</td>
                 `;
                 tbody.appendChild(tr);
+                
+                // Add Collapsible Details Row
+                const detailsTr = document.createElement('tr');
+                detailsTr.className = 'details-row';
+                detailsTr.id = `details-row-${{index}}`;
+                detailsTr.style.display = 'none';
+                
+                const formatVal = (val, suffix = '', defaultVal = '자료 없음') => {{
+                    return (val !== null && val !== undefined) ? `${{val.toLocaleString(undefined, {{maximumFractionDigits: 2}})}}${{suffix}}` : defaultVal;
+                }};
+                
+                const formatPctWithColor = (val) => {{
+                    if (val === null || val === undefined) return '자료 없음';
+                    const num = val * 100;
+                    const sign = num > 0 ? '+' : '';
+                    const cls = num > 0 ? 'var(--success)' : (num < 0 ? 'var(--danger)' : 'var(--text-muted)');
+                    return `<span style="color: ${{cls}}; font-weight: 600;">${{sign}}${{num.toFixed(2)}}%</span>`;
+                }};
+                
+                // Calculate index values at target date for display
+                const calcIndexPrice = (baseIdx, ret) => {{
+                    if (baseIdx === null || ret === null) return null;
+                    return baseIdx * (1 + ret);
+                }};
+                
+                detailsTr.innerHTML = `
+                    <td colspan="11">
+                        <div class="evidence-box">
+                            <h4>📊 <strong>${{row.회사명}} (${{row.종목코드}})</strong> 구조조정 주가 계산 근거 상세 내역</h4>
+                            <div class="evidence-grid">
+                                <div class="evidence-step">
+                                    <strong>1단계: 주가 판단 기준점 설정</strong>
+                                    <ul>
+                                        <li>소속 시장: <strong>${{row.시장}}</strong></li>
+                                        <li>보도 전 60일 평균 주가 (기준 가격): <strong>${{formatVal(row.baseline_stock, ' 원')}}</strong></li>
+                                        <li>보도 전 60일 평균 시장 지수 (기준 지수): <strong>${{formatVal(row.baseline_index, ' 포인트')}}</strong></li>
+                                    </ul>
+                                </div>
+                                <div class="evidence-step">
+                                    <strong>2단계: 시점별 실제 주가와 시장 흐름 계산식</strong>
+                                    <table class="evidence-table">
+                                        <thead>
+                                            <tr>
+                                                <th>구분</th>
+                                                <th>종가 (A)</th>
+                                                <th>실제 주가 변화 (A 대비)</th>
+                                                <th>시장 지수 (B)</th>
+                                                <th>시장 지수 변화 (B 대비)</th>
+                                                <th>시장 대비 성과 (A - B)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>보도 30일 뒤</td>
+                                                <td>${{formatVal(row.price_30d, ' 원')}}</td>
+                                                <td>${{formatPctWithColor(row.return_30d)}}</td>
+                                                <td>${{formatVal(calcIndexPrice(row.baseline_index, row.idx_return_30d), ' P')}}</td>
+                                                <td>${{formatPctWithColor(row.idx_return_30d)}}</td>
+                                                <td>${{formatPctWithColor(row.excess_30d)}}</td>
+                                            </tr>
+                                            <tr>
+                                                <td>보도 90일 뒤</td>
+                                                <td>${{formatVal(row.price_90d, ' 원')}}</td>
+                                                <td>${{formatPctWithColor(row.return_90d)}}</td>
+                                                <td>${{formatVal(calcIndexPrice(row.baseline_index, row.idx_return_90d), ' P')}}</td>
+                                                <td>${{formatPctWithColor(row.idx_return_90d)}}</td>
+                                                <td>${{formatPctWithColor(row.excess_90d)}}</td>
+                                            </tr>
+                                            <tr>
+                                                <td>보도 180일 뒤</td>
+                                                <td>${{formatVal(row.price_180d, ' 원')}}</td>
+                                                <td>${{formatPctWithColor(row.return_180d)}}</td>
+                                                <td>${{formatVal(calcIndexPrice(row.baseline_index, row.idx_return_180d), ' P')}}</td>
+                                                <td>${{formatPctWithColor(row.idx_return_180d)}}</td>
+                                                <td>${{formatPctWithColor(row.excess_180d)}}</td>
+                                            </tr>
+                                            <tr>
+                                                <td>보도 1년 뒤 (365일)</td>
+                                                <td>${{formatVal(row.price_365d, ' 원')}}</td>
+                                                <td>${{formatPctWithColor(row.return_365d)}}</td>
+                                                <td>${{formatVal(calcIndexPrice(row.baseline_index, row.idx_return_365d), ' P')}}</td>
+                                                <td>${{formatPctWithColor(row.idx_return_365d)}}</td>
+                                                <td>${{formatPctWithColor(row.excess_365d)}}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            ${{row.상장폐지일 ? `
+                            <div class="delist-alert ${{row.is_bankrupt_delist ? '' : 'info'}}">
+                                ⚠️ 이 회사는 <strong>${{row.상장폐지일}}</strong>에 <strong>'${{row.상장폐지사유 || '사유 미확인'}}'</strong> 사유로 상장폐지되었습니다.<br>
+                                ➡️ ${{row.is_bankrupt_delist ? 
+                                    '<strong>[부도성 퇴출 처리]</strong> 기업이 청산 또는 부도되어 퇴출되었으므로, 상장폐지일 이후 시점의 실제 주가는 <strong>0원(-100% 자산 손실)</strong>으로 회복률 계산에 엄격하게 반영되었습니다.' : 
+                                    '<strong>[경영 목적 퇴출 처리]</strong> 지주사 지분 스왑 또는 합병 등으로 인한 자진 상장폐지이므로, 상장폐지일 이후 시점은 가격 추적을 중단(자료 없음)했습니다.'}}
+                            </div>
+                            ` : ''}}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(detailsTr);
             }});
+        }}
+
+        function toggleDetails(index) {{
+            const detailsRow = document.getElementById(`details-row-${{index}}`);
+            if (detailsRow.style.display === 'none') {{
+                detailsRow.style.display = 'table-row';
+            }} else {{
+                detailsRow.style.display = 'none';
+            }}
         }}
 
         function filterTable() {{
@@ -833,7 +1098,7 @@ def main():
 """
     # 3. Write HTML file
     OUT_HTML.write_text(html_content, encoding="utf-8")
-    print(f"Generated HTML Dashboard -> {OUT_HTML}")
+    print(f"Generated Re-designed HTML Dashboard -> {OUT_HTML}")
 
 if __name__ == "__main__":
     main()

@@ -118,6 +118,7 @@ def calculate_rates_for_event(row, index_prices_cache):
             else:
                 # Normal merger/delist: stop tracking (NaN)
                 stock_price = np.nan
+                index_price = np.nan
                 stock_ret = np.nan
                 index_ret = np.nan
                 excess_ret = np.nan
@@ -128,6 +129,7 @@ def calculate_rates_for_event(row, index_prices_cache):
             
             if stock_after.empty or idx_after.empty:
                 stock_price = np.nan
+                index_price = np.nan
                 stock_ret = np.nan
                 index_ret = np.nan
                 excess_ret = np.nan
@@ -141,6 +143,7 @@ def calculate_rates_for_event(row, index_prices_cache):
                 
         results[f"price_{h}d"] = stock_price
         results[f"return_{h}d"] = stock_ret
+        results[f"idx_price_{h}d"] = index_price
         results[f"idx_return_{h}d"] = index_ret
         results[f"excess_{h}d"] = excess_ret
         
@@ -245,11 +248,11 @@ def main():
         
     cols = ["회사명", "종목코드", "이벤트시작일", "시장", "match_status", "기사수", "키워드종류", "대표제목",
             "baseline_stock", "baseline_index", 
-            "price_30d", "return_30d", "excess_30d",
-            "price_60d", "return_60d", "excess_60d",
-            "price_90d", "return_90d", "excess_90d",
-            "price_180d", "return_180d", "excess_180d",
-            "price_365d", "return_365d", "excess_365d",
+            "price_30d", "return_30d", "idx_price_30d", "idx_return_30d", "excess_30d",
+            "price_60d", "return_60d", "idx_price_60d", "idx_return_60d", "excess_60d",
+            "price_90d", "return_90d", "idx_price_90d", "idx_return_90d", "excess_90d",
+            "price_180d", "return_180d", "idx_price_180d", "idx_return_180d", "excess_180d",
+            "price_365d", "return_365d", "idx_price_365d", "idx_return_365d", "excess_365d",
             "min_price_1y", "min_return_1y", "min_days_1y", "min_excess_1y",
             "max_price_1y", "max_return_1y", "max_days_1y", "max_excess_1y",
             "상장폐지일", "상장폐지사유", "is_bankrupt_delist"]
