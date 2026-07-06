@@ -1,6 +1,7 @@
 """
 구조조정 보도 기업 주가 회복률 분석 결과를 시각화하는 인터랙티브 HTML 대시보드를 생성한다.
-용어를 쉽게 풀어쓰고, 각 데이터 포인트의 수학적 계산 근거를 추적할 수 있는 펼치기(Detail) 기능을 제공한다.
+각 이벤트별로 보도 전후 1년 동안의 일봉(3일 샘플링) 주가 추이 데이터를 내장하여,
+행을 클릭했을 때 해당 기업의 일별 주가 vs 시장 지수 비교 차트를 실시간으로 그려줍니다.
 
 입력:
   data/analysis/by_keyword.csv
@@ -14,10 +15,20 @@
 from pathlib import Path
 import json
 import pandas as pd
+import numpy as np
 
 ANALYSIS_DIR = Path("data/analysis")
 RESULTS_CSV = Path("data/processed/recovery_results.csv")
+STOCK_DIR = Path("data/prices/stocks")
+INDEX_DIR = Path("data/prices/indices")
 OUT_HTML = ANALYSIS_DIR / "dashboard.html"
+
+# 지수 파일 매핑
+INDEX_FILES = {
+    "KOSPI": INDEX_DIR / "KS11.csv",
+    "KOSDAQ": INDEX_DIR / "KQ11.csv",
+    "KOSDAQ GLOBAL": INDEX_DIR / "KQ11.csv"
+}
 
 def main():
     # 1. Load datasets
@@ -27,27 +38,136 @@ def main():
     by_industry = pd.read_csv(ANALYSIS_DIR / "by_industry.csv")
     df = pd.read_csv(RESULTS_CSV)
     
-    # 2. Serialize to JSON for HTML injection
+    # Serialize to JSON for HTML injection
     keyword_json = by_keyword.to_dict(orient="records")
     market_json = by_market.to_dict(orient="records")
     year_json = by_year.to_dict(orient="records")
     industry_json = by_industry.to_dict(orient="records")
     
-    # Selected columns for interactive table and detailed evidence popup
-    table_cols = [
-        "회사명", "종목코드", "이벤트시작일", "시장", "기사수", "키워드종류", "대표제목",
-        "baseline_stock", "baseline_index", 
-        "price_30d", "return_30d", "idx_price_30d", "idx_return_30d", "excess_30d",
-        "price_90d", "return_90d", "idx_price_90d", "idx_return_90d", "excess_90d",
-        "price_180d", "return_180d", "idx_price_180d", "idx_return_180d", "excess_180d",
-        "price_365d", "return_365d", "idx_price_365d", "idx_return_365d", "excess_365d",
-        "상장폐지일", "상장폐지사유", "is_bankrupt_delist"
-    ]
+    # Cache index dataframes to avoid re-reading
+    index_cache = {}
+    for m, path in INDEX_FILES.items():
+        if path.exists():
+            idx_df = pd.read_csv(path)
+            idx_df["Date"] = pd.to_datetime(idx_df["Date"])
+            idx_df = idx_df.sort_values("Date").reset_index(drop=True)
+            index_cache[m] = idx_df
+
+    # 2. Process events table and extract sampled daily time-series
+    print("Compiling event details and chart sequences...")
+    events_json = []
+    
+    # Sort by event date descending
     df_sorted = df.sort_values("이벤트시작일", ascending=False)
-    df_table = df_sorted[table_cols].copy()
-    # Fill NaNs with None for JSON compatibility
-    df_table = df_table.replace({float("nan"): None})
-    events_json = df_table.to_dict(orient="records")
+    
+    for idx_row, row in df_sorted.iterrows():
+        code = row["종목코드"]
+        if pd.isna(code):
+            continue
+        code = str(code).split(".")[0].zfill(6)
+        event_date_str = row["이벤트시작일"]
+        event_date = pd.to_datetime(event_date_str)
+        market = row["시장"]
+        
+        # Load stock price history
+        stock_file = STOCK_DIR / f"{code}.csv"
+        if not stock_file.exists() or market not in index_cache:
+            continue
+            
+        try:
+            stock_df = pd.read_csv(stock_file)
+            stock_df["Date"] = pd.to_datetime(stock_df["Date"])
+            stock_df = stock_df.sort_values("Date").reset_index(drop=True)
+        except Exception:
+            continue
+            
+        idx_df = index_cache[market]
+        
+        # Filter stock prices for [-60 days, +365 days] around event_date
+        start_range = event_date - pd.Timedelta(days=60)
+        end_range = event_date + pd.Timedelta(days=365)
+        stock_window = stock_df[(stock_df["Date"] >= start_range) & (stock_df["Date"] <= end_range)]
+        
+        # Sample every 3rd trading day to optimize HTML size while keeping high resolution (~100 points)
+        stock_sampled = stock_window.iloc[::3].copy()
+        
+        # Find prices at event date to normalize both stock and index to 0% (100) at T
+        stock_at_event = stock_df[stock_df["Date"] >= event_date].head(1)
+        idx_at_event = idx_df[idx_df["Date"] >= event_date].head(1)
+        
+        chart_data = []
+        if not stock_at_event.empty and not idx_at_event.empty:
+            p_stock_ref = stock_at_event["Close"].values[0]
+            p_idx_ref = idx_at_event["Close"].values[0]
+            
+            delisting_date = pd.to_datetime(row["상장폐지일"]) if not pd.isna(row["상장폐지일"]) else None
+            is_bankrupt = row["is_bankrupt_delist"] == True
+            
+            for _, s_row in stock_sampled.iterrows():
+                s_date = s_row["Date"]
+                s_price = s_row["Close"]
+                
+                # Find closest index price
+                idx_row_match = idx_df[idx_df["Date"] >= s_date].head(1)
+                if not idx_row_match.empty:
+                    i_price = idx_row_match["Close"].values[0]
+                    
+                    # Handle bankrupt delisting logic
+                    if delisting_date and s_date >= delisting_date and is_bankrupt:
+                        s_price = 0.0
+                    
+                    s_ret = (s_price / p_stock_ref) - 1.0 if p_stock_ref > 0 else 0.0
+                    i_ret = (i_price / p_idx_ref) - 1.0 if p_idx_ref > 0 else 0.0
+                    
+                    chart_data.append({
+                        "d": s_date.strftime("%m-%d"),
+                        "s": round(s_ret * 100, 2),
+                        "i": round(i_ret * 100, 2)
+                    })
+                    
+        # Construct row dict
+        row_dict = {
+            "회사명": row["회사명"],
+            "종목코드": code,
+            "이벤트시작일": event_date_str,
+            "시장": market,
+            "기사수": int(row["기사수"]),
+            "키워드종류": row["키워드종류"],
+            "대표제목": row["대표제목"],
+            "baseline_stock": float(row["baseline_stock"]) if not pd.isna(row["baseline_stock"]) else None,
+            "baseline_index": float(row["baseline_index"]) if not pd.isna(row["baseline_index"]) else None,
+            "price_30d": float(row["price_30d"]) if not pd.isna(row["price_30d"]) else None,
+            "return_30d": float(row["return_30d"]) if not pd.isna(row["return_30d"]) else None,
+            "idx_price_30d": float(row["idx_price_30d"]) if not pd.isna(row["idx_price_30d"]) else None,
+            "idx_return_30d": float(row["idx_return_30d"]) if not pd.isna(row["idx_return_30d"]) else None,
+            "excess_30d": float(row["excess_30d"]) if not pd.isna(row["excess_30d"]) else None,
+            
+            "price_90d": float(row["price_90d"]) if not pd.isna(row["price_90d"]) else None,
+            "return_90d": float(row["return_90d"]) if not pd.isna(row["return_90d"]) else None,
+            "idx_price_90d": float(row["idx_price_90d"]) if not pd.isna(row["idx_price_90d"]) else None,
+            "idx_return_90d": float(row["idx_return_90d"]) if not pd.isna(row["idx_return_90d"]) else None,
+            "excess_90d": float(row["excess_90d"]) if not pd.isna(row["excess_90d"]) else None,
+            
+            "price_180d": float(row["price_180d"]) if not pd.isna(row["price_180d"]) else None,
+            "return_180d": float(row["return_180d"]) if not pd.isna(row["return_180d"]) else None,
+            "idx_price_180d": float(row["idx_price_180d"]) if not pd.isna(row["idx_price_180d"]) else None,
+            "idx_return_180d": float(row["idx_return_180d"]) if not pd.isna(row["idx_return_180d"]) else None,
+            "excess_180d": float(row["excess_180d"]) if not pd.isna(row["excess_180d"]) else None,
+            
+            "price_365d": float(row["price_365d"]) if not pd.isna(row["price_365d"]) else None,
+            "return_365d": float(row["return_365d"]) if not pd.isna(row["return_365d"]) else None,
+            "idx_price_365d": float(row["idx_price_365d"]) if not pd.isna(row["idx_price_365d"]) else None,
+            "idx_return_365d": float(row["idx_return_365d"]) if not pd.isna(row["idx_return_365d"]) else None,
+            "excess_365d": float(row["excess_365d"]) if not pd.isna(row["excess_365d"]) else None,
+            
+            "상장폐지일": row["상장폐지일"] if not pd.isna(row["상장폐지일"]) else None,
+            "상장폐지사유": row["상장폐지사유"] if not pd.isna(row["상장폐지사유"]) else None,
+            "is_bankrupt_delist": bool(row["is_bankrupt_delist"]) if not pd.isna(row["is_bankrupt_delist"]) else False,
+            "chart_data": chart_data
+        }
+        events_json.append(row_dict)
+        
+    print(f"Loaded {len(events_json)} event charts successfully.")
     
     # Calculate key aggregate stats
     total_events = len(df)
@@ -393,11 +513,11 @@ def main():
 
         .evidence-grid {{
             display: grid;
-            grid-template-columns: 1fr 2fr;
+            grid-template-columns: 1fr 1fr;
             gap: 1.5rem;
         }}
 
-        @media (max-width: 768px) {{
+        @media (max-width: 900px) {{
             .evidence-grid {{
                 grid-template-columns: 1fr;
             }}
@@ -408,6 +528,10 @@ def main():
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 1rem;
+        }}
+
+        .evidence-step.full {{
+            grid-column: 1 / -1;
         }}
 
         .evidence-step strong {{
@@ -447,6 +571,14 @@ def main():
             padding: 0.5rem 0.75rem;
             background: transparent;
             border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }}
+
+        /* Individual Chart Container inside Details Box */
+        .details-chart-container {{
+            position: relative;
+            height: 250px;
+            width: 100%;
+            margin-top: 0.5rem;
         }}
 
         .delist-alert {{
@@ -552,15 +684,15 @@ def main():
                 </div>
                 <div class="glossary-item">
                     <h5>실제 주가 변화율 (실제 수익률)</h5>
-                    <p>보도 전 평균 주가 대비, 보도 이후 특정 시점(30일/90일/180일/1년)의 주가가 얼마나 변했는지 나타내는 비율입니다.</p>
+                    <p>보도 전 평균 주가 대비, 보도 이후 특정 시점(30일/90일/180일/1년)의 주가 변동률입니다.</p>
                 </div>
                 <div class="glossary-item">
                     <h5>시장 대비 성과 (시장 초과수익률)</h5>
-                    <p>기업의 주가 변화율에서 주식시장 전체의 상승률(코스피/코스닥 지수 상승률)을 뺀 값입니다. 값이 마이너스(-)라면 주가가 올랐더라도 시장 평균보다는 덜 벌었다는 의미입니다.</p>
+                    <p>기업의 주가 변화율에서 주식시장 전체의 상승률(코스피/코스닥 지수 상승률)을 뺀 값입니다. 값이 마이너스(-)라면 주가가 올랐더라도 시장 평균보다는 성과가 나빴다는 뜻입니다.</p>
                 </div>
                 <div class="glossary-item">
                     <h5>주식시장 퇴출(부도/상장폐지)</h5>
-                    <p>관찰 기간 중 자본잠식이나 부도 등으로 인해 상장폐지된 경우입니다. 투자 금액을 모두 잃은 상황이므로, 분석의 현실성을 위해 상장폐지 이후 시점의 실제 주가는 0원(-100% 손실)으로 계산했습니다.</p>
+                    <p>관찰 기간 중 자본잠식이나 부도 등으로 인해 상장폐지된 경우입니다. 투자 금액을 모두 잃은 상황이므로, 상장폐지 이후 시점의 실제 주가는 0원(-100% 손실)으로 계산했습니다.</p>
                 </div>
             </div>
         </div>
@@ -639,7 +771,7 @@ def main():
         <!-- Events Table card -->
         <div class="table-card">
             <div class="table-header-row">
-                <div class="chart-title" style="margin-bottom: 0;">구조조정 뉴스 이벤트 상세 데이터 내역 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(행을 클릭하면 상세 계산 근거를 볼 수 있습니다)</span></div>
+                <div class="chart-title" style="margin-bottom: 0;">구조조정 뉴스 이벤트 상세 데이터 내역 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(행을 클릭하면 계산 근거와 보도일 전후 1년 일봉 추세선을 볼 수 있습니다)</span></div>
                 <div class="search-container">
                     <input type="text" id="tableSearch" class="search-input" onkeyup="filterTable()" placeholder="회사명, 종목코드, 제목 검색...">
                 </div>
@@ -782,10 +914,6 @@ def main():
             }});
         }}
 
-        function updateKeywordChart() {{
-            initKeywordChart();
-        }}
-
         // ----------------------------------------------------
         // Chart 2: Sector Comparison Chart
         // ----------------------------------------------------
@@ -925,8 +1053,10 @@ def main():
         }}
 
         // ----------------------------------------------------
-        // Interactive Data Table with Collapsible Evidence Panel
+        // Interactive Data Table with Collapsible Evidence Panel & Daily Chart
         // ----------------------------------------------------
+        let activeRowChart = null; // Cache to hold active Chart.js instance for details row
+        
         function renderTable(data) {{
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
@@ -989,12 +1119,17 @@ def main():
                             <h4>📊 <strong>${{row.회사명}} (${{row.종목코드}})</strong> 구조조정 주가 계산 근거 상세 내역</h4>
                             <div class="evidence-grid">
                                 <div class="evidence-step">
-                                    <strong>1단계: 주가 판단 기준점 설정</strong>
+                                    <strong>1단계: 주가 판단 기준점 설정 (보도 전 60일 평균)</strong>
                                     <ul>
                                         <li>소속 시장: <strong>${{row.시장}}</strong></li>
                                         <li>보도 전 60일 평균 주가 (기준 가격): <strong>${{formatVal(row.baseline_stock, ' 원')}}</strong></li>
                                         <li>보도 전 60일 평균 시장 지수 (기준 지수): <strong>${{formatVal(row.baseline_index, ' 포인트')}}</strong></li>
                                     </ul>
+                                    <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                                        💡 <strong>계산 원리:</strong><br>
+                                        위 기준 주가와 기준 지수를 기준으로 삼아, 보도 이후 각 시점(30일~365일)의 실제 가격 변화율과 시장 지수 변화율을 각각 구합니다.
+                                        최종 <strong>'시장 대비 성과'</strong>는 <strong>[회사 변화율 - 시장 변화율]</strong>로 정밀하게 계산됩니다.
+                                    </div>
                                 </div>
                                 <div class="evidence-step">
                                     <strong>2단계: 시점별 실제 주가와 시장 흐름 계산식</strong>
@@ -1045,6 +1180,13 @@ def main():
                                         </tbody>
                                     </table>
                                 </div>
+                                
+                                <div class="evidence-step full">
+                                    <strong>3단계: 보도 전후 1년 주가 흐름 추세선 (보도일 시점 = 0% 기준정렬)</strong>
+                                    <div class="details-chart-container">
+                                        <canvas id="canvas-event-${{index}}"></canvas>
+                                    </div>
+                                </div>
                             </div>
                             
                             ${{row.상장폐지일 ? `
@@ -1064,10 +1206,86 @@ def main():
 
         function toggleDetails(index) {{
             const detailsRow = document.getElementById(`details-row-${{index}}`);
-            if (detailsRow.style.display === 'none') {{
+            const isOpening = detailsRow.style.display === 'none';
+            
+            // Close all details rows first to prevent chart performance lags
+            const allDetailRows = document.querySelectorAll('.details-row');
+            allDetailRows.forEach(row => row.style.display = 'none');
+            
+            if (activeRowChart) {{
+                activeRowChart.destroy();
+                activeRowChart = null;
+            }}
+            
+            if (isOpening) {{
                 detailsRow.style.display = 'table-row';
-            }} else {{
-                detailsRow.style.display = 'none';
+                
+                // Draw Chart dynamically
+                const row = eventsData[index];
+                if (row.chart_data && row.chart_data.length > 0) {{
+                    const ctx = document.getElementById(`canvas-event-${{index}}`).getContext('2d');
+                    
+                    const labels = row.chart_data.map(p => p.d);
+                    const stockSeries = row.chart_data.map(p => p.s);
+                    const indexSeries = row.chart_data.map(p => p.i);
+                    
+                    activeRowChart = new Chart(ctx, {{
+                        type: 'line',
+                        data: {{
+                            labels: labels,
+                            datasets: [
+                                {{
+                                    label: `${{row.회사명}} 주가 변동률`,
+                                    data: stockSeries,
+                                    borderColor: '#10b981',
+                                    borderWidth: 2.5,
+                                    tension: 0.1,
+                                    fill: false,
+                                    pointRadius: 0
+                                }},
+                                {{
+                                    label: `${{row.시장}} 지수 변동률`,
+                                    data: indexSeries,
+                                    borderColor: 'rgba(255, 255, 255, 0.4)',
+                                    borderWidth: 1.5,
+                                    borderDash: [4, 4],
+                                    tension: 0.1,
+                                    fill: false,
+                                    pointRadius: 0
+                                }}
+                            ]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                legend: {{
+                                    position: 'top',
+                                    labels: {{ color: '#e2e8f0', font: {{ size: 10 }} }}
+                                }},
+                                tooltip: {{
+                                    mode: 'index',
+                                    intersect: false,
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            return context.dataset.label + ': ' + context.raw.toFixed(2) + '%';
+                                        }}
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                y: {{
+                                    ticks: {{ color: '#94a3b8', font: {{ size: 9 }}, callback: val => val.toFixed(0) + '%' }},
+                                    grid: {{ color: 'rgba(255, 255, 255, 0.03)' }}
+                                }},
+                                x: {{
+                                    ticks: {{ color: '#94a3b8', font: {{ size: 9 }}, maxTicksLimit: 12 }},
+                                    grid: {{ display: false }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
             }}
         }}
 
@@ -1098,7 +1316,7 @@ def main():
 """
     # 3. Write HTML file
     OUT_HTML.write_text(html_content, encoding="utf-8")
-    print(f"Generated Re-designed HTML Dashboard -> {OUT_HTML}")
+    print(f"Generated High-Fidelity Chart-in-Table HTML Dashboard -> {OUT_HTML}")
 
 if __name__ == "__main__":
     main()
