@@ -23,6 +23,89 @@ MATCH_OUT = Path("data/processed/company_listing_matches.csv")
 EVENTS_OUT = Path("data/processed/events_with_listings.csv")
 
 
+MANUAL_MAPPING = {
+    # Company Name: Ticker
+    "포스코": "005490",       # POSCO홀딩스
+    "현대중공업": "009540",   # HD현대 (holding company containing historical prices before split)
+    "대우조선": "042660",     # 한화오션
+    "대우조선해양": "042660",  # 한화오션
+    "국민은행": "105560",     # KB금융 (holding company for events representing the bank)
+    "KB국민은행": "105560",   # KB금융
+    "신한은행": "055550",     # 신한지주
+    "하나은행": "086790",     # 하나금융지주
+    "하나금융": "086790",     # 하나금융지주
+    "우리은행": "000030",     # 우리은행 (delisted ticker, which covers historical price before 2019)
+    "삼성물산": "028260",     # 삼성물산 (listed ticker)
+    "미래에셋증권": "006800", # 미래에셋증권
+    "두산건설": "011160",     # 두산건설 (delisted ticker)
+    "SK": "034730",           # SK
+    "광주은행": "192530",     # 광주은행 (delisted ticker)
+    "경남은행": "192520",     # 경남은행 (delisted ticker)
+    "금호건설": "002990",     # 금호건설
+    "핸디소프트": "220180",   # 핸디소프트
+    "엔씨소프트": "036570",   # NC
+    "엔씨": "036570",         # NC
+    "현대상선": "011200",     # HMM
+    "두산인프라코어": "042670",# HD현대인프라코어
+    "두산중공업": "034020",   # 두산에너빌리티
+    "하이투자증권": "139130",  # iM금융지주 (DGB금융지주)
+    "한화케미칼": "009830",   # 한화솔루션
+    "삼성정밀화학": "004000", # 롯데정밀화학
+    "현대자동차": "005380",   # 현대차
+    "한화손보": "000370",     # 한화손해보험
+    "롯데마트": "023530",     # 롯데쇼핑
+    "삼성디스플레이": "005930",# 삼성전자
+    "우리투자증권": "005940", # NH투자증권 (merged)
+    "HJ중공업": "097230",     # HJ중공업 (renamed from 한진중공업)
+    "한진중공업": "097230",   # HJ중공업
+    "SKB": "017670",          # SK텔레콤
+    "SK브로드밴드": "017670", # SK텔레콤
+    "롯데칠성음료": "005300", # 롯데칠성
+    "카카오엔터프라이즈": "035720", # 카카오
+    "IBK투자증권": "024110",  # 기업은행
+    "KB국민카드": "105560",   # KB금융
+    "동부화재": "005830",     # DB손해보험
+    "동양네트웍스": "030790", # 비케이탑스 (delisted)
+    "롯데그룹": "004990",     # 롯데지주
+    "롯데백화점": "023530",   # 롯데쇼핑
+    "롯데온": "023530",       # 롯데쇼핑
+    "만도": "204320",         # HL만도
+    "신한금융투자": "055550", # 신한지주
+    "신한생명": "055550",     # 신한지주
+    "쌍용차": "003620",       # KG모빌리티
+    "쌍용자동차": "003620",   # KG모빌리티
+    "우리카드": "316140",     # 우리금융지주
+    "하나카드": "086790",     # 하나금융지주
+    "현대미포조선": "010620", # HD현대미포
+    "현대일렉트릭": "267260", # HD현대일렉트릭
+    "휠라홀딩스": "081660",   # 휠라홀딩스
+    "두산그룹": "000150",     # 두산
+    "신한카드": "055550",     # 신한지주
+    "오비맥주": "exclude",
+    "한국GM": "exclude",
+    "씨티은행": "exclude",
+    "한국씨티은행": "exclude",
+    "홈플러스": "exclude",
+    "르노삼성차": "exclude",
+    "르노삼성": "exclude",
+    "르노삼성자동차": "exclude",
+    "유암코": "exclude",
+    "이스타항공": "exclude",
+    "11번가": "exclude",
+    "롯데면세점": "exclude",
+    "넥슨": "exclude",
+    "농협은행": "exclude",
+    "NH농협은행": "exclude",
+    "성동조선": "exclude",
+    "이랜드": "exclude",
+    "한국SC은행": "exclude",
+    "SC은행": "exclude",
+    "SC제일은행": "exclude",
+    "흥국생명": "exclude",
+    "삼성": "exclude",
+}
+
+
 def norm_name(value: object) -> str:
     text = "" if pd.isna(value) else str(value)
     text = re.sub(r"\s+", "", text)
@@ -51,6 +134,45 @@ def build_lookup(df: pd.DataFrame, status: str) -> dict[str, list[dict]]:
 
 
 def choose_match(name: str, listed_lookup: dict, delisted_lookup: dict) -> dict:
+    if name in MANUAL_MAPPING:
+        code = MANUAL_MAPPING[name]
+        if code == "exclude":
+            return {
+                "match_status": "exclude",
+                "종목코드": None,
+                "상장사명": None,
+                "시장": None,
+                "업종": None,
+                "상장일": None,
+                "상장폐지일": None,
+                "상장폐지사유": None,
+            }
+        
+        # Search for code in listed/delisted lookups
+        found_matches = []
+        for key, item_list in listed_lookup.items():
+            for item in item_list:
+                if item["종목코드"] == code:
+                    found_matches.append(item)
+        for key, item_list in delisted_lookup.items():
+            for item in item_list:
+                if item["종목코드"] == code:
+                    found_matches.append(item)
+        
+        if found_matches:
+            return found_matches[0]
+            
+        return {
+            "match_status": "manual_code",
+            "종목코드": code,
+            "상장사명": name,
+            "시장": None,
+            "업종": None,
+            "상장일": None,
+            "상장폐지일": None,
+            "상장폐지사유": None,
+        }
+
     key = norm_name(name)
     listed = listed_lookup.get(key, [])
     delisted = delisted_lookup.get(key, [])

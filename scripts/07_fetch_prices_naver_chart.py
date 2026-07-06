@@ -1,12 +1,14 @@
 """
-네이버 차트 XML 엔드포인트로 장기 일별 종목 가격을 수집한다.
+네이버 차트 XML 엔드포인트로 장기 일별 종목/지수 가격을 수집한다.
 
 FinanceDataReader/pykrx는 현재 종목별 3,000행 제한 때문에 2014-04-11 이전
 가격을 가져오지 못한다. 네이버 차트 엔드포인트는 count 파라미터로 더 긴
 일별 시계열을 받을 수 있어, 2010년 이벤트 분석용 보강 provider로 사용한다.
 
 출력:
-  data/prices_naver/stocks/{code}.csv
+  data/prices/stocks/{code}.csv
+  data/prices/indices/KS11.csv
+  data/prices/indices/KQ11.csv
 """
 from pathlib import Path
 import re
@@ -17,8 +19,9 @@ import pandas as pd
 import requests
 
 EVENTS_IN = Path("data/processed/events_with_listings.csv")
-OUT_DIR = Path("data/prices_naver/stocks")
-VALID_STATUSES = {"current_exact"}
+OUT_DIR = Path("data/prices/stocks")
+INDEX_DIR = Path("data/prices/indices")
+VALID_STATUSES = {"current_exact", "delisted_exact"}
 VALID_MARKETS = {"KOSPI", "KOSDAQ", "KOSDAQ GLOBAL"}
 
 COUNT = 6000
@@ -39,7 +42,10 @@ def fetch_chart(code: str) -> pd.DataFrame:
     resp = requests.get(URL, params=params, headers=HEADERS, timeout=20)
     resp.raise_for_status()
 
-    root = ET.fromstring(resp.content)
+    # Fix encoding declaration and strip leading/trailing whitespace to avoid ParseError
+    xml_str = resp.text.strip()
+    xml_str = re.sub(r'encoding=\".*?\"', 'encoding="utf-8"', xml_str)
+    root = ET.fromstring(xml_str.encode("utf-8"))
     rows = []
     for item in root.findall(".//item"):
         data = item.attrib.get("data", "")
@@ -49,11 +55,11 @@ def fetch_chart(code: str) -> pd.DataFrame:
         rows.append(
             {
                 "Date": pd.to_datetime(parts[0], format="%Y%m%d"),
-                "Open": int(parts[1]),
-                "High": int(parts[2]),
-                "Low": int(parts[3]),
-                "Close": int(parts[4]),
-                "Volume": int(parts[5]),
+                "Open": float(parts[1]),
+                "High": float(parts[2]),
+                "Low": float(parts[3]),
+                "Close": float(parts[4]),
+                "Volume": float(parts[5]),
             }
         )
 
@@ -72,18 +78,33 @@ def main() -> None:
     codes = sorted(eligible["종목코드"].dropna().unique())
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    failures = []
+    INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # 1. Fetch index prices
+    print("Fetching index prices...")
+    for symbol, filename in [("KOSPI", "KS11.csv"), ("KOSDAQ", "KQ11.csv")]:
+        out_path = INDEX_DIR / filename
+        try:
+            df = fetch_chart(symbol)
+            df.to_csv(out_path, index=False, encoding="utf-8-sig")
+            print(f"Index {symbol} -> {out_path}: {len(df):,} rows")
+        except Exception as exc:
+            print(f"Index {symbol} FAILED: {exc!r}")
+        time.sleep(0.2)
+
+    # 2. Fetch stock prices
     print(f"eligible events: {len(eligible):,}")
-    print(f"codes: {len(codes):,}")
+    print(f"codes to fetch: {len(codes):,}")
+    failures = []
 
     for i, code in enumerate(codes, start=1):
         out_path = OUT_DIR / f"{code}.csv"
         try:
             df = fetch_chart(code)
-            df.to_csv(out_path, index=False, encoding="utf-8-sig")
             if df.empty:
                 print(f"[{i}/{len(codes)}] {code}: 0 rows")
             else:
+                df.to_csv(out_path, index=False, encoding="utf-8-sig")
                 print(
                     f"[{i}/{len(codes)}] {code}: {len(df):,} rows "
                     f"{df['Date'].min().date()} ~ {df['Date'].max().date()}"
