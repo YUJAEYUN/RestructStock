@@ -309,6 +309,15 @@ header {{ padding: 2.5rem 0 1.25rem; }}
 h1 {{ font-size: 1.7rem; margin: 0 0 0.35rem; }}
 .subtitle {{ color: var(--text-secondary); font-size: 1rem; line-height: 1.5; max-width: 640px; }}
 
+.criteria-box {{
+  background: var(--accent-wash); border: 1px solid var(--border); border-radius: 12px;
+  padding: 1rem 1.25rem; margin-top: 1.25rem; font-size: 0.85rem; color: var(--text-secondary);
+}}
+.criteria-box .title {{ font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; }}
+.criteria-box ul {{ margin: 0; padding-left: 1.1rem; line-height: 1.65; }}
+.criteria-box li {{ margin-bottom: 0.2rem; }}
+.criteria-box strong {{ color: var(--text-primary); }}
+
 .hero-row {{ display: flex; gap: 1.25rem; align-items: stretch; flex-wrap: wrap; margin: 1.5rem 0; }}
 .hero-card {{
   background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
@@ -403,6 +412,15 @@ footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bor
 <header>
   <h1>구조조정 뉴스, 그 회사 주가는 어떻게 됐을까?</h1>
   <div class="subtitle">구조조정·희망퇴직·인력감축 뉴스가 보도된 국내 상장기업들이, 그 이후 주가가 원래 수준으로 돌아왔는지 회사별로 보여줍니다.</div>
+  <div class="criteria-box">
+    <div class="title">이 대시보드가 쓰는 기준</div>
+    <ul>
+      <li><strong>이벤트 구분</strong>: 같은 회사라도 뉴스 보도 간격이 30일을 넘으면 별도 사건으로 나눔 (예: 2015년 구조조정과 2020년 구조조정은 각각 다른 이벤트). 30일 이내 보도는 같은 사건으로 보고 가장 빠른 보도일 하나로 합침.</li>
+      <li><strong>관찰 기간</strong>: 보도일 기준 전 60거래일 ~ 후 365일. 그래프의 세로 점선이 보도일(0% 기준)임.</li>
+      <li><strong>기준 주가</strong>: 보도 전 60거래일 평균 종가.</li>
+      <li><strong>회복 판단</strong>: 관찰 가능한 가장 긴 기간(최대 365일, 최근 보도는 확보된 기간까지)의 주가가 기준 주가 이상이면 "회복", 아니면 "아직 못 돌아옴". 상장폐지(부도성)는 무조건 회복 실패(0원)로 처리하고, 보도 30일이 안 지났으면 "관찰중"으로 판단을 미룸. 시장 대비 성과는 이 판단에 넣지 않고 그래프·문장으로 별도 표시.</li>
+    </ul>
+  </div>
 </header>
 
 <div class="hero-row">
