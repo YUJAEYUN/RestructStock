@@ -22,26 +22,31 @@
 3. `03_cluster_events.py` — 같은 회사에 대해 30일 이내로 근접한 보도를 하나의 "이벤트"로
    묶는다 (같은 사건을 여러 언론사가 보도한 경우 병합, 연도가 다른 재구조조정은 별도 이벤트).
    → `data/processed/events.csv` (최종 이벤트 리스트: 회사명/시작일/기사수/키워드종류/대표제목)
+4. `04_fetch_market_reference.py` ~ `09_analyze_results.py` — KRX 상장/상장폐지 마스터 수집,
+   뉴스 회사명-종목코드 매칭, 주가/지수 데이터 수집, 회복률(30/90/180/365일, 시장 대비 초과수익률) 계산.
+   → `data/reference/*.csv`, `data/prices/`, `data/processed/recovery_results.csv`, `data/analysis/*.csv`
+5. `10_generate_html_dashboard.py` — `recovery_results.csv`를 회사 스토리 중심 대시보드로 시각화.
+   회사별 카드(주가 vs 시장지수 그래프, ✅회복/🔴미회복/💀상장폐지/⏳관찰중 배지, 평이한 한글 설명 문장)와
+   연도·시장·보도유형별 회복 비율 요약 차트로 구성. Chart.js는 CDN 대신 `scripts/vendor/chart.umd.min.js`를
+   빌드 시점에 읽어 HTML에 인라인으로 넣어서, 결과물 하나만으로 오프라인에서도 열리게 했다.
+   → `data/analysis/dashboard.html`
 
-`data/processed/*.parquet`는 용량 문제로 git에 커밋하지 않는다(재생성 가능). CSV 결과물만 커밋.
+`data/processed/*.parquet`는 용량 문제로 git에 커밋하지 않는다(재생성 가능). CSV/HTML 결과물만 커밋.
 
-## 현재 상태 (2026-07-06)
+## 현재 상태 (2026-07-08)
 
 - 3-1(뉴스 데이터 정리) 1차 완료: 31,667건 기사 → 993개 회사 후보, 2,023개 이벤트로 정리.
-- 3-2 일부 진행:
-  - `FinanceDataReader`로 KRX 현재 상장사/상장폐지 마스터를 수집.
-    → `data/reference/listed_companies.csv`, `data/reference/delisted_companies.csv`
-  - 뉴스 회사명과 상장/상장폐지 마스터를 보수적으로 정확매칭.
-    → `data/processed/company_listing_matches.csv`, `data/processed/events_with_listings.csv`
-  - 현재상장 정확매칭 종목 194개와 KOSPI/KOSDAQ 지수 가격을 수집.
-    → `data/prices/stocks/`, `data/prices/indices/`
+- 3-2/3-3 진행: KRX 상장/상장폐지 마스터 매칭, 주가·지수 데이터 수집(2014-04 이후),
+  회복률(30/90/180/365일, 시장 대비 초과수익률) 계산까지 완료. 결과는
+  `data/processed/recovery_results.csv` (797건, 228개사).
+- 시각화: `data/analysis/dashboard.html`. 통계표/전문용어 대신 회사별 "뉴스 나온 날 이후
+  주가 어떻게 됐나" 카드(회사 주가 vs 시장지수 그래프 + 평이한 문장 + 회복 배지) 중심으로 구성.
+  전체 회복 비율은 상장폐지 포함/제외 두 버전을 모두 보여준다 (PRD 5번 주의사항 반영).
 - **남은 제약**:
-  - `FinanceDataReader`/`pykrx` 종목 가격 API는 현재 약 3,000거래일만 반환해서,
-    수집된 현재상장 종목 가격은 대체로 2014-04-11 이후부터만 존재한다.
-    2010~2014년 초 이벤트까지 분석하려면 네이버 차트 XML 기반 장기 가격 보강이 필요하다.
-    보강 스크립트 초안은 `scripts/07_fetch_prices_naver_chart.py`에 두었고, 실행은 TODO로 남김.
-  - 상장폐지 종목 가격은 별도 provider 검증이 필요하다. 현재는 상장폐지 마스터와 이벤트 매칭만 완료.
-  - 회복률 계산(3-3), 사유분류/업종별 집계, DART 교차검증(3-5)은 아직 진행하지 않았다.
+  - 종목 가격은 대체로 2014-04-11 이후부터만 존재해서 2010~2014년 초 이벤트는 아직 분석 못함
+    (보강 스크립트 초안 `scripts/07_fetch_prices_naver_chart.py`, 실행은 TODO).
+  - 사유분류(실적부진형 vs 선제적재편형), 업종별 집계, DART 교차검증(3-5)은 아직 진행하지 않았다.
+    (이전에 있던 "업종" 집계는 KRX 소속부/시장구분 데이터가 실제 업종과 뒤섞여 있어 신뢰도가 낮아 제외했다.)
 - 회사명 후보 추출은 규칙 기반 블록리스트 방식이라 완벽하지 않다. `company_candidates.csv`와
   `events.csv`를 사람이 한 번 훑어보고 제외할 항목을 표시하는 검수 과정이 필요하다
   (PRD 3-1-5 참고).
@@ -52,7 +57,5 @@
   모회사 매핑, 비상장/해외기업 제외, 자회사/브랜드명 정리.
 - 2010~2014년 가격 보강:
   `scripts/07_fetch_prices_naver_chart.py` 실행 또는 별도 데이터 파일 확보.
-- 상장폐지 종목 가격 수집 provider 확정:
-  관찰 기간 내 상장폐지 이벤트를 회복률 0% 처리할 수 있도록 delisting date와 가격 종단일 검증.
-- 회복률 계산 스크립트 작성:
-  발표 전 60일 평균 대비, 이벤트 후 저점 대비, 시장 초과수익률 기준을 모두 산출.
+- 구조조정 사유 분류(실적부진형/선제적재편형/업종전반형) 및 업종별 집계 (정확한 업종 데이터 확보 필요).
+- DART 공시 교차검증(뉴스 보도일 vs 공시일 비교).
