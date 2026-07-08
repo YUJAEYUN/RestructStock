@@ -3,11 +3,11 @@
 인터랙티브 HTML 대시보드를 생성한다.
 
 기존 버전은 초과수익률/기준지수 같은 계산 용어와 통계표가 중심이라 읽기 어려웠다.
-이 버전은 이벤트 하나하나를 "이 회사, 이 날 뉴스 나옴 → 그 후 이렇게 됨" 카드로 보여주고,
+이 버전은 사건 하나하나를 "이 회사, 이 날 뉴스 나옴 → 그 후 이렇게 됨" 카드로 보여주고,
 회복 여부는 ✅/🔴/💀 같은 배지로, 회사 주가와 시장 지수는 파란선-회색선 두 줄 그래프로
 표현해서 숫자를 몰라도 그래프 모양만으로 이해할 수 있게 하는 것이 목표다.
 
-"회복"의 정의는 PRD 그대로: 이벤트 이후 주가가 이벤트 이전 수준(보도 전 60거래일 평균)으로
+"회복"의 정의는 PRD 그대로: 사건 이후 주가가 사건 이전 수준(첫 보도 전 60거래일 평균)으로
 돌아왔는가 (return_Nd >= 0). 시장 대비 성과(초과수익률)는 회사선-시장선 그래프 비교로
 대체하고, 숫자 자체는 펼쳤을 때만 보이는 부가 정보로 내렸다.
 
@@ -99,8 +99,8 @@ def build_chart_data(code, market, event_date, index_cache, baseline_row):
     p_stock_ref = stock_at_event["Close"].values[0]
     p_idx_ref = idx_at_event["Close"].values[0]
 
-    # 표본 추출(3일 간격)이 보도일과 정확히 맞아떨어지지 않을 수 있어,
-    # "보도일 = 0%" 기준이 되는 실제 거래일 행을 항상 포함시킨다 (그래프에 보도일 표시용).
+    # 표본 추출(3일 간격)이 첫 보도일과 정확히 맞아떨어지지 않을 수 있어,
+    # 기준(0%)이 되는 실제 거래일 행을 항상 포함시킨다 (그래프에 첫 보도일 표시용).
     anchor_date = stock_at_event["Date"].values[0]
     if anchor_date not in stock_sampled["Date"].values:
         stock_sampled = pd.concat([stock_sampled, stock_at_event]).sort_values("Date")
@@ -186,9 +186,9 @@ def main():
             "zero_idx": zero_idx,
         })
 
-    print(f"이벤트 {len(events_json)}건에 대해 그래프 데이터 생성 완료")
+    print(f"사건 {len(events_json)}건에 대해 그래프 데이터 생성 완료")
 
-    # ---- 집계: 연도별, 시장별, 키워드별 회복 비율 (상장폐지/데이터없음 제외한 판정 가능 이벤트 기준) ----
+    # ---- 집계: 연도별, 시장별, 키워드별 회복 비율 (상장폐지/데이터없음 제외한 판정 가능 사건 기준) ----
     def recovery_rate(rows):
         judged = [r for r in rows if r["status"] in ("recovered", "not_recovered", "delisted")]
         if not judged:
@@ -415,22 +415,22 @@ footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bor
   <div class="criteria-box">
     <div class="title">이 대시보드가 쓰는 기준</div>
     <ul>
-      <li><strong>이벤트 구분</strong>: 같은 회사라도 뉴스 보도 간격이 30일을 넘으면 별도 사건으로 나눔 (예: 2015년 구조조정과 2020년 구조조정은 각각 다른 이벤트). 30일 이내 보도는 같은 사건으로 보고 가장 빠른 보도일 하나로 합침.</li>
-      <li><strong>관찰 기간</strong>: 보도일 기준 전 60거래일 ~ 후 365일. 그래프의 세로 점선이 보도일(0% 기준)임.</li>
-      <li><strong>기준 주가</strong>: 보도 전 60거래일 평균 종가.</li>
-      <li><strong>회복 판단</strong>: 관찰 가능한 가장 긴 기간(최대 365일, 최근 보도는 확보된 기간까지)의 주가가 기준 주가 이상이면 "회복", 아니면 "아직 못 돌아옴". 상장폐지(부도성)는 무조건 회복 실패(0원)로 처리하고, 보도 30일이 안 지났으면 "관찰중"으로 판단을 미룸. 시장 대비 성과는 이 판단에 넣지 않고 그래프·문장으로 별도 표시.</li>
+      <li><strong>사건 구분</strong>: 같은 회사라도 뉴스 보도 간격이 30일을 넘으면 별도 사건으로 나눔 (예: 2015년 구조조정과 2020년 구조조정은 각각 다른 사건). 30일 이내 보도는 같은 사건으로 보고 가장 빠른 보도일(첫 보도일) 하나로 합침.</li>
+      <li><strong>관찰 기간</strong>: 첫 보도일 기준 전 60거래일 ~ 첫 보도 후 365일. 그래프의 세로 점선이 첫 보도일임.</li>
+      <li><strong>기준 주가</strong>: 첫 보도 전 60거래일 종가의 평균.</li>
+      <li><strong>회복 판단</strong>: 관찰 가능한 가장 긴 기간(최대 365일, 최근 보도는 확보된 기간까지)의 주가가 기준 주가보다 높아지면 "회복", 아니면 "아직 못 돌아옴". 상장폐지(부도성)는 무조건 회복 실패(0원)로 처리하고, 첫 보도 후 30일이 안 지났으면 "관찰중"으로 판단을 미룸. 시장 대비 성과는 이 판단에 넣지 않고 그래프·문장으로 별도 표시.</li>
     </ul>
   </div>
 </header>
 
 <div class="hero-row">
   <div class="hero-card" style="flex: 1 1 260px;">
-    <div class="hero-label">판단 가능한 이벤트 중, 주가가 <strong>원래 수준을 회복</strong>한 비율</div>
+    <div class="hero-label">판단 가능한 사건 중, 주가가 <strong>원래 수준을 회복</strong>한 비율</div>
     <div class="hero-figure" id="heroFigure">-</div>
     <div class="hero-note">상장폐지된 기업도 "회복 실패(0원)"로 포함한 수치입니다. 상장폐지 기업을 빼면 수치가 더 좋아 보일 수 있어, 아래에 두 버전을 함께 표시합니다.</div>
   </div>
   <div class="stat-row" style="flex: 2 1 420px;">
-    <div class="stat-tile"><div class="v" id="statTotal">-</div><div class="l">전체 이벤트</div></div>
+    <div class="stat-tile"><div class="v" id="statTotal">-</div><div class="l">전체 사건</div></div>
     <div class="stat-tile"><div class="v" id="statCompanies">-</div><div class="l">분석 기업 수</div></div>
     <div class="stat-tile"><div class="v" id="statDelisted">-</div><div class="l">상장폐지된 기업</div></div>
     <div class="stat-tile"><div class="v" id="statAliveRate">-</div><div class="l">상장폐지 제외 시 회복 비율</div></div>
@@ -438,7 +438,7 @@ footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bor
 </div>
 
 <div class="section-title">전체적으로 보면</div>
-<div class="section-desc">연도·시장·보도 유형별로, 판단 가능한 이벤트 중 몇 %가 회복했는지 보여줍니다. 막대 안 숫자는 이벤트 건수입니다.</div>
+<div class="section-desc">연도·시장·보도 유형별로, 판단 가능한 사건 중 몇 %가 회복했는지 보여줍니다. 막대 안 숫자는 사건 건수입니다.</div>
 <div class="mini-charts">
   <div class="mini-card"><h4>연도별 회복 비율</h4><div class="cvs-wrap"><canvas id="yearChart"></canvas></div></div>
   <div class="mini-card"><h4>시장별 회복 비율</h4><div class="cvs-wrap"><canvas id="marketChart"></canvas></div></div>
@@ -446,7 +446,7 @@ footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bor
 </div>
 
 <div class="section-title">회사별로 보기</div>
-<div class="section-desc">카드를 클릭하면 그 회사의 주가(파란선)와 코스피/코스닥 지수(회색 점선)를 함께 볼 수 있습니다. 그래프는 보도일 기준 <strong>전 60거래일 ~ 후 365일</strong> 구간이며, 세로 점선이 보도일입니다.</div>
+<div class="section-desc">카드를 클릭하면 그 회사의 주가(파란선)와 코스피/코스닥 지수(회색 점선)를 함께 볼 수 있습니다. 그래프는 첫 보도일 기준 <strong>전 60거래일 ~ 후 365일</strong> 구간이며, 세로 점선이 첫 보도일입니다.</div>
 <div class="filter-row">
   <input type="text" id="searchInput" placeholder="회사명, 종목코드, 기사 제목 검색">
   <select id="statusFilter">
@@ -474,9 +474,8 @@ footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bor
 <button id="loadMoreBtn">더 보기</button>
 
 <footer>
-  회복 기준: 보도 전 60거래일 평균 주가 대비, 관찰 가능한 가장 긴 기간(최대 1년) 후 주가가 그 수준 이상이면 "회복"으로 판단했습니다.
-  최근 보도(아직 1년이 지나지 않은 경우)는 그때까지 확인 가능한 기간 기준으로 표시됩니다.
-  구조조정 보도와 주가 회복은 상관관계이며, 인과관계를 증명하는 것은 아닙니다.
+  판단 기준은 위 "이 대시보드가 쓰는 기준" 박스를 참고하세요.
+  구조조정 보도와 주가 회복은 상관관계를 보여주는 것이며, 인과관계를 증명하는 것은 아닙니다.
 </footer>
 
 </div>
@@ -579,7 +578,7 @@ function cardHTML(e, idx) {{
         <span class="badge ${{statusCls}}">${{statusLabel}}</span>
       </div>
       ${{sparklineSVG(e.chart, e.zero_idx)}}
-      <div class="spark-caption">회색 세로 점선 = 보도일(${{e.event_date}})</div>
+      <div class="spark-caption">회색 세로 점선 = 첫 보도일(${{e.event_date}})</div>
       <div class="card-verdict">${{e.verdict}}</div>
       <div class="card-headline" title="${{e.headline.replace(/"/g, '&quot;')}}">${{e.headline}}</div>
       <div class="detail" id="detail-${{idx}}"></div>
@@ -626,7 +625,7 @@ function toggleDetail(idx) {{
       <span class="legend-line"><span class="legend-swatch" style="background:var(--gray-line); border-top: 2px dashed var(--gray-line); height:0;"></span>${{e.market}} 지수</span>
     </div>
     <div class="cvs-wrap"><canvas id="detailCanvas-${{idx}}"></canvas></div>
-    <div class="detail-caption">파란선이 회색 점선보다 위에 있으면, 이 회사가 같은 기간 시장 전체보다 잘 버틴 것입니다. 세로 점선이 보도일(${{e.event_date}}, 기준 0%)입니다.</div>
+    <div class="detail-caption">파란선이 회색 점선보다 위에 있으면, 이 회사가 같은 기간 시장 전체보다 잘 버틴 것입니다. 세로 점선이 첫 보도일(${{e.event_date}})입니다.</div>
     <details class="raw-numbers">
       <summary>자세한 숫자 보기</summary>
       <table class="raw-table">
@@ -659,7 +658,7 @@ function toggleDetail(idx) {{
       c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary');
       c.font = '11px system-ui, sans-serif';
       c.textAlign = 'center';
-      c.fillText('보도일', x, chartArea.top - 4);
+      c.fillText('첫 보도일', x, chartArea.top - 4);
       c.restore();
     }}
   }};
@@ -722,7 +721,7 @@ function barChart(canvasId, agg) {{
         legend: {{ display: false }},
         tooltip: {{
           callbacks: {{
-            label: c => `회복 비율 ${{c.raw}}% (이벤트 ${{agg[c.dataIndex].count}}건)`
+            label: c => `회복 비율 ${{c.raw}}% (사건 ${{agg[c.dataIndex].count}}건)`
           }}
         }}
       }},
