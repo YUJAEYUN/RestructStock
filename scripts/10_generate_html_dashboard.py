@@ -94,16 +94,24 @@ def build_chart_data(code, market, event_date, index_cache, baseline_row):
     stock_at_event = stock_df[stock_df["Date"] >= event_date].head(1)
     idx_at_event = idx_df[idx_df["Date"] >= event_date].head(1)
     if stock_at_event.empty or idx_at_event.empty:
-        return []
+        return [], None
 
     p_stock_ref = stock_at_event["Close"].values[0]
     p_idx_ref = idx_at_event["Close"].values[0]
+
+    # 표본 추출(3일 간격)이 보도일과 정확히 맞아떨어지지 않을 수 있어,
+    # "보도일 = 0%" 기준이 되는 실제 거래일 행을 항상 포함시킨다 (그래프에 보도일 표시용).
+    anchor_date = stock_at_event["Date"].values[0]
+    if anchor_date not in stock_sampled["Date"].values:
+        stock_sampled = pd.concat([stock_sampled, stock_at_event]).sort_values("Date")
+    stock_sampled = stock_sampled.drop_duplicates(subset="Date").reset_index(drop=True)
 
     delisting_date = pd.to_datetime(baseline_row["상장폐지일"]) if not pd.isna(baseline_row["상장폐지일"]) else None
     is_bankrupt = baseline_row["is_bankrupt_delist"] == True
 
     chart_data = []
-    for _, s_row in stock_sampled.iterrows():
+    zero_idx = None
+    for i, s_row in stock_sampled.iterrows():
         s_date = s_row["Date"]
         s_price = s_row["Close"]
         idx_row_match = idx_df[idx_df["Date"] >= s_date].head(1)
@@ -114,12 +122,14 @@ def build_chart_data(code, market, event_date, index_cache, baseline_row):
             s_price = 0.0
         s_ret = (s_price / p_stock_ref) - 1.0 if p_stock_ref > 0 else 0.0
         i_ret = (i_price / p_idx_ref) - 1.0 if p_idx_ref > 0 else 0.0
+        if s_date == anchor_date:
+            zero_idx = len(chart_data)
         chart_data.append({
             "d": s_date.strftime("%Y-%m-%d"),
             "s": round(s_ret * 100, 2),
             "i": round(i_ret * 100, 2),
         })
-    return chart_data
+    return chart_data, zero_idx
 
 
 def safe_float(v):
@@ -151,7 +161,7 @@ def main():
         status, horizon, ret = classify_status(row, event_date)
         excess = safe_float(row.get(f"excess_{horizon}d")) if horizon else None
         verdict = verdict_sentence(row["회사명"], status, horizon, ret, excess)
-        chart_data = build_chart_data(code, market, event_date, index_cache, row)
+        chart_data, zero_idx = build_chart_data(code, market, event_date, index_cache, row)
         if not chart_data:
             continue
 
@@ -173,6 +183,7 @@ def main():
             "excesses": {f"{d}d": safe_float(row.get(f"excess_{d}d")) for d in HORIZONS},
             "baseline_stock": safe_float(row.get("baseline_stock")),
             "chart": chart_data,
+            "zero_idx": zero_idx,
         })
 
     print(f"이벤트 {len(events_json)}건에 대해 그래프 데이터 생성 완료")
@@ -360,6 +371,7 @@ h1 {{ font-size: 1.7rem; margin: 0 0 0.35rem; }}
 .badge.pill {{ background: var(--gridline); color: var(--text-secondary); font-weight: 500; }}
 .card-verdict {{ font-size: 0.85rem; color: var(--text-secondary); margin: 0.6rem 0 0.5rem; line-height: 1.45; }}
 .spark {{ width: 100%; height: 46px; display: block; margin: 0.3rem 0 0.2rem; }}
+.spark-caption {{ font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.4rem; }}
 .card-headline {{ font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 
 .detail {{ display: none; margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }}
@@ -416,7 +428,7 @@ footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--bor
 </div>
 
 <div class="section-title">회사별로 보기</div>
-<div class="section-desc">카드를 클릭하면 그 회사의 주가(파란선)와 코스피/코스닥 지수(회색 점선)를 함께 볼 수 있습니다.</div>
+<div class="section-desc">카드를 클릭하면 그 회사의 주가(파란선)와 코스피/코스닥 지수(회색 점선)를 함께 볼 수 있습니다. 그래프는 보도일 기준 <strong>전 60거래일 ~ 후 365일</strong> 구간이며, 세로 점선이 보도일입니다.</div>
 <div class="filter-row">
   <input type="text" id="searchInput" placeholder="회사명, 종목코드, 기사 제목 검색">
   <select id="statusFilter">
@@ -472,7 +484,7 @@ setText('statAliveRate', (HERO.rate_alive_only * 100).toFixed(0) + '%');
 // ---------------------------------------------------------
 // Sparkline: small inline SVG, no chart library needed
 // ---------------------------------------------------------
-function sparklineSVG(chart) {{
+function sparklineSVG(chart, zeroIdx) {{
   if (!chart || chart.length < 2) return '';
   const w = 300, h = 46;
   const allVals = chart.flatMap(p => [p.s, p.i]);
@@ -484,8 +496,11 @@ function sparklineSVG(chart) {{
   const sPath = path(chart.map(p => p.s));
   const iPath = path(chart.map(p => p.i));
   const zeroY = scaleY(0).toFixed(1);
+  const eventMarker = (zeroIdx === null || zeroIdx === undefined) ? '' :
+    `<line x1="${{scaleX(zeroIdx).toFixed(1)}}" y1="0" x2="${{scaleX(zeroIdx).toFixed(1)}}" y2="${{h}}" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="2,2"/>`;
   return `<svg class="spark" viewBox="0 0 ${{w}} ${{h}}" preserveAspectRatio="none">
     <line x1="0" y1="${{zeroY}}" x2="${{w}}" y2="${{zeroY}}" stroke="var(--gridline)" stroke-width="1"/>
+    ${{eventMarker}}
     <path d="${{iPath}}" fill="none" stroke="var(--gray-line)" stroke-width="2" stroke-dasharray="4,3" opacity="0.7"/>
     <path d="${{sPath}}" fill="none" stroke="var(--accent)" stroke-width="2"/>
   </svg>`;
@@ -545,7 +560,8 @@ function cardHTML(e, idx) {{
         </div>
         <span class="badge ${{statusCls}}">${{statusLabel}}</span>
       </div>
-      ${{sparklineSVG(e.chart)}}
+      ${{sparklineSVG(e.chart, e.zero_idx)}}
+      <div class="spark-caption">회색 세로 점선 = 보도일(${{e.event_date}})</div>
       <div class="card-verdict">${{e.verdict}}</div>
       <div class="card-headline" title="${{e.headline.replace(/"/g, '&quot;')}}">${{e.headline}}</div>
       <div class="detail" id="detail-${{idx}}"></div>
@@ -592,7 +608,7 @@ function toggleDetail(idx) {{
       <span class="legend-line"><span class="legend-swatch" style="background:var(--gray-line); border-top: 2px dashed var(--gray-line); height:0;"></span>${{e.market}} 지수</span>
     </div>
     <div class="cvs-wrap"><canvas id="detailCanvas-${{idx}}"></canvas></div>
-    <div class="detail-caption">파란선이 회색 점선보다 위에 있으면, 이 회사가 같은 기간 시장 전체보다 잘 버틴 것입니다. (보도일 = 0% 기준)</div>
+    <div class="detail-caption">파란선이 회색 점선보다 위에 있으면, 이 회사가 같은 기간 시장 전체보다 잘 버틴 것입니다. 세로 점선이 보도일(${{e.event_date}}, 기준 0%)입니다.</div>
     <details class="raw-numbers">
       <summary>자세한 숫자 보기</summary>
       <table class="raw-table">
@@ -605,6 +621,30 @@ function toggleDetail(idx) {{
     </details>
   `;
   const ctx = document.getElementById(`detailCanvas-${{idx}}`).getContext('2d');
+  const zeroIdx = e.zero_idx;
+  const eventLinePlugin = {{
+    id: 'eventLine',
+    afterDraw(chart) {{
+      if (zeroIdx === null || zeroIdx === undefined) return;
+      const {{ ctx: c, chartArea, scales }} = chart;
+      const x = scales.x.getPixelForValue(zeroIdx);
+      if (x < chartArea.left || x > chartArea.right) return;
+      c.save();
+      c.beginPath();
+      c.setLineDash([3, 3]);
+      c.moveTo(x, chartArea.top);
+      c.lineTo(x, chartArea.bottom);
+      c.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-muted');
+      c.lineWidth = 1.5;
+      c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary');
+      c.font = '11px system-ui, sans-serif';
+      c.textAlign = 'center';
+      c.fillText('보도일', x, chartArea.top - 4);
+      c.restore();
+    }}
+  }};
   detailChart = new Chart(ctx, {{
     type: 'line',
     data: {{
@@ -614,8 +654,10 @@ function toggleDetail(idx) {{
         {{ label: e.market + ' 지수', data: e.chart.map(p => p.i), borderColor: getComputedStyle(document.documentElement).getPropertyValue('--gray-line'), borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: 0.15 }}
       ]
     }},
+    plugins: [eventLinePlugin],
     options: {{
       responsive: true, maintainAspectRatio: false,
+      layout: {{ padding: {{ top: 14 }} }},
       interaction: {{ mode: 'index', intersect: false }},
       plugins: {{
         legend: {{ display: false }},
